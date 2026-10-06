@@ -1,0 +1,141 @@
+import logging
+
+from database.connection import get_db_connection
+
+
+logger = logging.getLogger(__name__)
+
+
+SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS products (
+    shopify_product_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
+CREATE TABLE IF NOT EXISTS variants (
+    shopify_variant_id TEXT PRIMARY KEY,
+
+    shopify_product_id TEXT NOT NULL,
+
+    title TEXT NOT NULL,
+
+    sku TEXT,
+
+    price TEXT,
+
+    inventory_quantity INTEGER,
+
+    inventory_item_id TEXT UNIQUE,
+
+    synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (shopify_product_id)
+        REFERENCES products(shopify_product_id)
+        ON DELETE CASCADE
+);
+
+
+CREATE TABLE IF NOT EXISTS variant_changes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    shopify_variant_id TEXT NOT NULL,
+
+    field_name TEXT NOT NULL
+        CHECK (
+            field_name IN (
+                'price',
+                'inventory_quantity'
+            )
+        ),
+
+    old_value TEXT,
+
+    new_value TEXT,
+
+    detected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (shopify_variant_id)
+        REFERENCES variants(shopify_variant_id)
+        ON DELETE CASCADE
+);
+
+
+CREATE TABLE IF NOT EXISTS sync_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    completed_at TEXT,
+
+    status TEXT NOT NULL
+        CHECK (
+            status IN (
+                'running',
+                'success',
+                'failed'
+            )
+        ),
+
+    products_seen INTEGER DEFAULT 0,
+
+    variants_seen INTEGER DEFAULT 0,
+
+    error_message TEXT
+);
+
+
+CREATE INDEX IF NOT EXISTS idx_variants_product_id
+ON variants(shopify_product_id);
+
+
+CREATE INDEX IF NOT EXISTS idx_variants_sku
+ON variants(sku);
+
+
+CREATE INDEX IF NOT EXISTS idx_variant_changes_variant_id
+ON variant_changes(shopify_variant_id);
+"""
+
+
+def initialize_database():
+    """
+    Create the SQLite tables and indexes required by the application.
+    """
+
+    with get_db_connection() as connection:
+        connection.executescript(SCHEMA_SQL)
+
+    logger.info("SQLite database initialized successfully.")
+
+
+def get_table_names():
+    """
+    Return all user-created SQLite tables.
+    """
+
+    with get_db_connection() as connection:
+        cursor = connection.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND name NOT LIKE 'sqlite_%'
+            ORDER BY name;
+            """
+        )
+
+        return [row["name"] for row in cursor.fetchall()]
+
+
+if __name__ == "__main__":
+    initialize_database()
+
+    tables = get_table_names()
+
+    print("Database initialized successfully.")
+    print("Tables:")
+
+    for table in tables:
+        print(f"  - {table}")

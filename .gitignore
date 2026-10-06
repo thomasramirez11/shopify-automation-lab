@@ -1,0 +1,23 @@
+# Secrets
+.env
+
+# Python virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Database
+*.db
+
+# Logs
+logs/
+
+# VS Code local settings
+.vscode/
+
+# SQLite databases
+data/*.db
+data/*.db-shm
+data/*.db-wal
