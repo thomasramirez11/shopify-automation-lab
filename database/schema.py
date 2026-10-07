@@ -86,6 +86,51 @@ CREATE TABLE IF NOT EXISTS sync_runs (
 );
 
 
+CREATE TABLE IF NOT EXISTS orders (
+    shopify_order_id TEXT PRIMARY KEY,
+
+    order_name TEXT NOT NULL,
+
+    created_at TEXT NOT NULL,
+
+    updated_at TEXT NOT NULL,
+
+    currency_code TEXT NOT NULL,
+
+    total_price TEXT NOT NULL,
+
+    financial_status TEXT,
+
+    fulfillment_status TEXT,
+
+    synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
+CREATE TABLE IF NOT EXISTS order_line_items (
+    shopify_line_item_id TEXT PRIMARY KEY,
+
+    shopify_order_id TEXT NOT NULL,
+
+    shopify_variant_id TEXT,
+
+    sku TEXT,
+
+    title TEXT NOT NULL,
+
+    quantity INTEGER NOT NULL
+        CHECK (quantity >= 0),
+
+    unit_price TEXT,
+
+    synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (shopify_order_id)
+        REFERENCES orders(shopify_order_id)
+        ON DELETE CASCADE
+);
+
+
 CREATE INDEX IF NOT EXISTS idx_variants_product_id
 ON variants(shopify_product_id);
 
@@ -96,6 +141,22 @@ ON variants(sku);
 
 CREATE INDEX IF NOT EXISTS idx_variant_changes_variant_id
 ON variant_changes(shopify_variant_id);
+
+
+CREATE INDEX IF NOT EXISTS idx_orders_created_at
+ON orders(created_at);
+
+
+CREATE INDEX IF NOT EXISTS idx_order_line_items_order_id
+ON order_line_items(shopify_order_id);
+
+
+CREATE INDEX IF NOT EXISTS idx_order_line_items_variant_id
+ON order_line_items(shopify_variant_id);
+
+
+CREATE INDEX IF NOT EXISTS idx_order_line_items_sku
+ON order_line_items(sku);
 """
 
 
@@ -126,7 +187,10 @@ def get_table_names():
             """
         )
 
-        return [row["name"] for row in cursor.fetchall()]
+        return [
+            row["name"]
+            for row in cursor.fetchall()
+        ]
 
 
 if __name__ == "__main__":
