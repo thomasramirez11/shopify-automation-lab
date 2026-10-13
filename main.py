@@ -5,8 +5,10 @@ from config.settings import (
     SHOPIFY_STORE_DOMAIN,
 )
 
+from repositories.order_repository import OrderRepository
 from repositories.product_repository import ProductRepository
 from repositories.sync_run_repository import SyncRunRepository
+from services.order_service import OrderService
 from services.product_service import ProductService
 from shopify.client import ShopifyClient
 
@@ -30,7 +32,6 @@ def main():
         # 1. Create Shopify client
         # --------------------------------------------------
 
-    
         client = ShopifyClient(
             store_domain=SHOPIFY_STORE_DOMAIN,
             client_id=SHOPIFY_CLIENT_ID,
@@ -53,7 +54,10 @@ def main():
         # --------------------------------------------------
 
         product_service = ProductService(client)
+        order_service = OrderService(client)
+
         product_repository = ProductRepository()
+        order_repository = OrderRepository()
 
         # --------------------------------------------------
         # 4. Retrieve products from Shopify
@@ -100,50 +104,305 @@ def main():
         print()
 
         # --------------------------------------------------
-        # 6. Persist Shopify products into SQLite
+        # 6. Retrieve orders from Shopify
+        # --------------------------------------------------
+
+        print("Retrieving orders...")
+
+        orders = order_service.get_all_orders()
+
+        print(f"Orders found: {len(orders)}")
+        print()
+
+        # --------------------------------------------------
+        # 7. Display Shopify order data
+        # --------------------------------------------------
+
+        if not orders:
+            print("No orders found yet.")
+            print()
+
+        for order in orders:
+            print("=" * 50)
+
+            total_price_set = (
+                order.get("totalPriceSet")
+                or {}
+            )
+
+            shop_money = (
+                total_price_set.get("shopMoney")
+                or {}
+            )
+
+            total_amount = (
+                shop_money.get("amount")
+                or "0.00"
+            )
+
+            currency_code = (
+                shop_money.get("currencyCode")
+                or "N/A"
+            )
+
+            financial_status = (
+                order.get("displayFinancialStatus")
+                or "N/A"
+            )
+
+            fulfillment_status = (
+                order.get("displayFulfillmentStatus")
+                or "N/A"
+            )
+
+            print(f"ORDER: {order['name']}")
+            print(f"ID: {order['id']}")
+            print(f"Created: {order['createdAt']}")
+            print(f"Updated: {order['updatedAt']}")
+
+            print(
+                "Financial status: "
+                f"{financial_status}"
+            )
+
+            print(
+                "Fulfillment status: "
+                f"{fulfillment_status}"
+            )
+
+            print(
+                f"Total: ${total_amount} "
+                f"{currency_code}"
+            )
+
+            line_item_edges = (
+                order
+                .get("lineItems", {})
+                .get("edges", [])
+            )
+
+            print(
+                f"Line items: "
+                f"{len(line_item_edges)}"
+            )
+            print()
+
+            for line_item_edge in line_item_edges:
+                line_item = line_item_edge["node"]
+
+                variant = (
+                    line_item.get("variant")
+                    or {}
+                )
+
+                unit_price_set = (
+                    line_item.get(
+                        "originalUnitPriceSet"
+                    )
+                    or {}
+                )
+
+                unit_shop_money = (
+                    unit_price_set.get("shopMoney")
+                    or {}
+                )
+
+                unit_amount = (
+                    unit_shop_money.get("amount")
+                    or "0.00"
+                )
+
+                unit_currency = (
+                    unit_shop_money.get(
+                        "currencyCode"
+                    )
+                    or currency_code
+                )
+
+                print(
+                    f"  Item: "
+                    f"{line_item['title']}"
+                )
+
+                print(
+                    f"  SKU: "
+                    f"{line_item.get('sku') or 'NO-SKU'}"
+                )
+
+                print(
+                    f"  Quantity: "
+                    f"{line_item['quantity']}"
+                )
+
+                print(
+                    f"  Unit price: "
+                    f"${unit_amount} "
+                    f"{unit_currency}"
+                )
+
+                print(
+                    f"  Variant ID: "
+                    f"{variant.get('id') or 'N/A'}"
+                )
+
+                print()
+
+        print("=" * 50)
+        print("Order retrieval test: SUCCESS")
+        print()
+
+        # --------------------------------------------------
+        # 8. Persist Shopify products into SQLite
         # --------------------------------------------------
 
         print("Saving products to SQLite...")
 
         for product in products:
-            product_repository.save_product(product)
+            product_repository.save_product(
+                product
+            )
 
         print("Products saved successfully!")
         print()
 
         # --------------------------------------------------
-        # 7. Read the data back from SQLite
+        # 9. Persist Shopify orders and detect new orders
         # --------------------------------------------------
 
-        stored_products = product_repository.get_all_products()
-        stored_variants = product_repository.get_all_variants()
+        print("Saving orders to SQLite...")
+
+        new_orders = []
+
+        for order in orders:
+            is_new_order = (
+                order_repository.save_order(order)
+            )
+
+            if is_new_order:
+                new_orders.append(order)
+
+        print("Orders saved successfully!")
+        print()
+
+        # --------------------------------------------------
+        # 10. Display newly detected orders
+        # --------------------------------------------------
+
+        print("New order detection")
+        print("-------------------")
+        print(
+            f"New orders detected: "
+            f"{len(new_orders)}"
+        )
+
+        if not new_orders:
+            print("No new orders detected.")
+
+        for order in new_orders:
+            total_price_set = (
+                order.get("totalPriceSet")
+                or {}
+            )
+
+            shop_money = (
+                total_price_set.get("shopMoney")
+                or {}
+            )
+
+            total_amount = (
+                shop_money.get("amount")
+                or "0.00"
+            )
+
+            currency_code = (
+                shop_money.get("currencyCode")
+                or "N/A"
+            )
+
+            print()
+            print("*** NEW ORDER DETECTED ***")
+            print(f"Order: {order['name']}")
+
+            print(
+                f"Total: ${total_amount} "
+                f"{currency_code}"
+            )
+
+            line_item_edges = (
+                order
+                .get("lineItems", {})
+                .get("edges", [])
+            )
+
+            print(
+                f"Line items: "
+                f"{len(line_item_edges)}"
+            )
+
+        print()
+
+        # --------------------------------------------------
+        # 11. Read product data back from SQLite
+        # --------------------------------------------------
+
+        stored_products = (
+            product_repository.get_all_products()
+        )
+
+        stored_variants = (
+            product_repository.get_all_variants()
+        )
 
         expected_variant_count = sum(
             len(product["variants"]["edges"])
             for product in products
         )
 
-        print("Database verification")
-        print("---------------------")
-        print(f"Shopify products: {len(products)}")
+        # --------------------------------------------------
+        # 12. Read order data back from SQLite
+        # --------------------------------------------------
+
+        stored_order_count = (
+            order_repository.count_orders()
+        )
+
+        stored_line_item_count = (
+            order_repository.count_line_items()
+        )
+
+        expected_line_item_count = sum(
+            len(order["lineItems"]["edges"])
+            for order in orders
+        )
+
+        # --------------------------------------------------
+        # 13. Verify product database state
+        # --------------------------------------------------
+
+        print("Product database verification")
+        print("-----------------------------")
+
+        print(
+            f"Shopify products: "
+            f"{len(products)}"
+        )
+
         print(
             f"Database products: "
             f"{len(stored_products)}"
         )
+
         print(
             f"Shopify variants: "
             f"{expected_variant_count}"
         )
+
         print(
             f"Database variants: "
             f"{len(stored_variants)}"
         )
-        print()
 
-        # --------------------------------------------------
-        # 8. Verify persistence
-        # --------------------------------------------------
-        
+        print()
 
         products_match = (
             len(products)
@@ -157,18 +416,73 @@ def main():
 
         if products_match and variants_match:
             print("=" * 50)
+
             print(
-                "Shopify -> SQLite "
+                "Shopify -> SQLite product "
                 "persistence test: SUCCESS"
             )
         else:
             raise RuntimeError(
-                "Shopify and SQLite record counts "
-                "do not match."
+                "Shopify and SQLite product "
+                "record counts do not match."
+            )
+
+        print()
+
+        # --------------------------------------------------
+        # 14. Verify order database state
+        # --------------------------------------------------
+
+        print("Order database verification")
+        print("---------------------------")
+
+        print(
+            f"Shopify orders: "
+            f"{len(orders)}"
+        )
+
+        print(
+            f"Database orders: "
+            f"{stored_order_count}"
+        )
+
+        print(
+            f"Shopify line items: "
+            f"{expected_line_item_count}"
+        )
+
+        print(
+            f"Database line items: "
+            f"{stored_line_item_count}"
+        )
+
+        print()
+
+        orders_match = (
+            len(orders)
+            == stored_order_count
+        )
+
+        line_items_match = (
+            expected_line_item_count
+            == stored_line_item_count
+        )
+
+        if orders_match and line_items_match:
+            print("=" * 50)
+
+            print(
+                "Shopify -> SQLite order "
+                "persistence test: SUCCESS"
+            )
+        else:
+            raise RuntimeError(
+                "Shopify and SQLite order "
+                "record counts do not match."
             )
 
         # --------------------------------------------------
-        # 9. Mark synchronization successful
+        # 15. Mark synchronization successful
         # --------------------------------------------------
 
         sync_run_repository.mark_success(
@@ -186,33 +500,39 @@ def main():
         print()
         print("Synchronization audit")
         print("---------------------")
+
         print(
             f"Run ID: "
             f"{completed_sync_run['id']}"
         )
+
         print(
             f"Started: "
             f"{completed_sync_run['started_at']}"
         )
+
         print(
             f"Completed: "
             f"{completed_sync_run['completed_at']}"
         )
+
         print(
             f"Status: "
             f"{completed_sync_run['status']}"
         )
+
         print(
             "Products seen: "
             f"{completed_sync_run['products_seen']}"
         )
+
         print(
             "Variants seen: "
             f"{completed_sync_run['variants_seen']}"
         )
 
         # --------------------------------------------------
-        # 11. Display recent synchronization history
+        # 16. Display recent synchronization history
         # --------------------------------------------------
 
         recent_runs = (
@@ -235,7 +555,7 @@ def main():
 
     except Exception as exc:
         # --------------------------------------------------
-        # 12. Mark synchronization failed
+        # 17. Mark synchronization failed
         # --------------------------------------------------
 
         error_message = (
@@ -250,11 +570,10 @@ def main():
         print()
         print("Synchronization audit")
         print("---------------------")
+
         print(f"Run ID: {sync_run_id}")
         print("Status: failed")
         print(f"Error: {error_message}")
-
-        
 
         # Re-raise the original exception so Python still
         # reports the synchronization as a real failure.
