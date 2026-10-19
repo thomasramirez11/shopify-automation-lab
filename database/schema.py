@@ -131,6 +131,61 @@ CREATE TABLE IF NOT EXISTS order_line_items (
 );
 
 
+CREATE TABLE IF NOT EXISTS variant_costs (
+    shopify_variant_id TEXT PRIMARY KEY,
+
+    sku TEXT,
+
+    unit_cost TEXT NOT NULL,
+
+    currency_code TEXT NOT NULL,
+
+    cost_source TEXT NOT NULL DEFAULT 'manual'
+        CHECK (
+            cost_source IN (
+                'manual',
+                'supplier'
+            )
+        ),
+
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
+CREATE TABLE IF NOT EXISTS order_line_item_profit_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    shopify_line_item_id TEXT NOT NULL UNIQUE,
+
+    shopify_order_id TEXT NOT NULL,
+
+    shopify_variant_id TEXT,
+
+    sku TEXT,
+
+    quantity INTEGER NOT NULL
+        CHECK (quantity >= 0),
+
+    currency_code TEXT NOT NULL,
+
+    unit_sale_price TEXT NOT NULL,
+
+    unit_cost TEXT NOT NULL,
+
+    line_revenue TEXT NOT NULL,
+
+    line_cost TEXT NOT NULL,
+
+    estimated_gross_profit TEXT NOT NULL,
+
+    gross_margin_percent TEXT,
+
+    cost_source TEXT NOT NULL,
+
+    calculated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
 CREATE INDEX IF NOT EXISTS idx_variants_product_id
 ON variants(shopify_product_id);
 
@@ -157,6 +212,22 @@ ON order_line_items(shopify_variant_id);
 
 CREATE INDEX IF NOT EXISTS idx_order_line_items_sku
 ON order_line_items(sku);
+
+
+CREATE INDEX IF NOT EXISTS idx_variant_costs_sku
+ON variant_costs(sku);
+
+
+CREATE INDEX IF NOT EXISTS idx_profit_snapshots_order_id
+ON order_line_item_profit_snapshots(shopify_order_id);
+
+
+CREATE INDEX IF NOT EXISTS idx_profit_snapshots_variant_id
+ON order_line_item_profit_snapshots(shopify_variant_id);
+
+
+CREATE INDEX IF NOT EXISTS idx_profit_snapshots_sku
+ON order_line_item_profit_snapshots(sku);
 """
 
 
@@ -168,7 +239,9 @@ def initialize_database():
     with get_db_connection() as connection:
         connection.executescript(SCHEMA_SQL)
 
-    logger.info("SQLite database initialized successfully.")
+    logger.info(
+        "SQLite database initialized successfully."
+    )
 
 
 def get_table_names():

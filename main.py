@@ -5,11 +5,19 @@ from config.settings import (
     SHOPIFY_STORE_DOMAIN,
 )
 
+from repositories.cost_repository import CostRepository
 from repositories.order_repository import OrderRepository
 from repositories.product_repository import ProductRepository
+from repositories.profit_snapshot_repository import (
+    ProfitSnapshotRepository,
+)
 from repositories.sync_run_repository import SyncRunRepository
+from services.financial_processing_service import (
+    FinancialProcessingService,
+)
 from services.order_service import OrderService
 from services.product_service import ProductService
+from services.profit_service import ProfitService
 from shopify.client import ShopifyClient
 
 
@@ -55,12 +63,37 @@ def main():
 
         product_service = ProductService(client)
         order_service = OrderService(client)
+        profit_service = ProfitService()
+
+        # --------------------------------------------------
+        # 4. Create repositories
+        # --------------------------------------------------
 
         product_repository = ProductRepository()
         order_repository = OrderRepository()
+        cost_repository = CostRepository()
+
+        profit_snapshot_repository = (
+            ProfitSnapshotRepository()
+        )
 
         # --------------------------------------------------
-        # 4. Retrieve products from Shopify
+        # 5. Create financial processing service
+        # --------------------------------------------------
+
+        financial_processing_service = (
+            FinancialProcessingService(
+                order_repository=order_repository,
+                cost_repository=cost_repository,
+                snapshot_repository=(
+                    profit_snapshot_repository
+                ),
+                profit_service=profit_service,
+            )
+        )
+
+        # --------------------------------------------------
+        # 6. Retrieve products from Shopify
         # --------------------------------------------------
 
         print("Retrieving products...")
@@ -71,7 +104,7 @@ def main():
         print()
 
         # --------------------------------------------------
-        # 5. Display Shopify product data
+        # 7. Display Shopify product data
         # --------------------------------------------------
 
         for product in products:
@@ -91,8 +124,14 @@ def main():
                 variant = variant_edge["node"]
 
                 print(f"  Variant: {variant['title']}")
-                print(f"  SKU: {variant['sku'] or 'NO-SKU'}")
-                print(f"  Price: ${variant['price']}")
+                print(
+                    f"  SKU: "
+                    f"{variant['sku'] or 'NO-SKU'}"
+                )
+                print(
+                    f"  Price: "
+                    f"${variant['price']}"
+                )
                 print(
                     "  Inventory: "
                     f"{variant['inventoryQuantity']}"
@@ -104,7 +143,7 @@ def main():
         print()
 
         # --------------------------------------------------
-        # 6. Retrieve orders from Shopify
+        # 8. Retrieve orders from Shopify
         # --------------------------------------------------
 
         print("Retrieving orders...")
@@ -115,7 +154,7 @@ def main():
         print()
 
         # --------------------------------------------------
-        # 7. Display Shopify order data
+        # 9. Display Shopify order data
         # --------------------------------------------------
 
         if not orders:
@@ -146,19 +185,29 @@ def main():
             )
 
             financial_status = (
-                order.get("displayFinancialStatus")
+                order.get(
+                    "displayFinancialStatus"
+                )
                 or "N/A"
             )
 
             fulfillment_status = (
-                order.get("displayFulfillmentStatus")
+                order.get(
+                    "displayFulfillmentStatus"
+                )
                 or "N/A"
             )
 
             print(f"ORDER: {order['name']}")
             print(f"ID: {order['id']}")
-            print(f"Created: {order['createdAt']}")
-            print(f"Updated: {order['updatedAt']}")
+            print(
+                f"Created: "
+                f"{order['createdAt']}"
+            )
+            print(
+                f"Updated: "
+                f"{order['updatedAt']}"
+            )
 
             print(
                 "Financial status: "
@@ -188,7 +237,9 @@ def main():
             print()
 
             for line_item_edge in line_item_edges:
-                line_item = line_item_edge["node"]
+                line_item = (
+                    line_item_edge["node"]
+                )
 
                 variant = (
                     line_item.get("variant")
@@ -203,12 +254,16 @@ def main():
                 )
 
                 unit_shop_money = (
-                    unit_price_set.get("shopMoney")
+                    unit_price_set.get(
+                        "shopMoney"
+                    )
                     or {}
                 )
 
                 unit_amount = (
-                    unit_shop_money.get("amount")
+                    unit_shop_money.get(
+                        "amount"
+                    )
                     or "0.00"
                 )
 
@@ -252,7 +307,7 @@ def main():
         print()
 
         # --------------------------------------------------
-        # 8. Persist Shopify products into SQLite
+        # 10. Persist Shopify products into SQLite
         # --------------------------------------------------
 
         print("Saving products to SQLite...")
@@ -266,7 +321,7 @@ def main():
         print()
 
         # --------------------------------------------------
-        # 9. Persist Shopify orders and detect new orders
+        # 11. Persist Shopify orders and detect new orders
         # --------------------------------------------------
 
         print("Saving orders to SQLite...")
@@ -275,7 +330,9 @@ def main():
 
         for order in orders:
             is_new_order = (
-                order_repository.save_order(order)
+                order_repository.save_order(
+                    order
+                )
             )
 
             if is_new_order:
@@ -285,11 +342,12 @@ def main():
         print()
 
         # --------------------------------------------------
-        # 10. Display newly detected orders
+        # 12. Display newly detected orders
         # --------------------------------------------------
 
         print("New order detection")
         print("-------------------")
+
         print(
             f"New orders detected: "
             f"{len(new_orders)}"
@@ -342,7 +400,194 @@ def main():
         print()
 
         # --------------------------------------------------
-        # 11. Read product data back from SQLite
+        # 13. Automatically process order finances
+        # --------------------------------------------------
+
+        print("Financial analysis")
+        print("------------------")
+
+        stored_orders_for_financials = (
+            order_repository.get_all_orders()
+        )
+
+        financial_results = []
+
+        for stored_order in (
+            stored_orders_for_financials
+        ):
+            result = (
+                financial_processing_service
+                .process_order(
+                    stored_order
+                )
+            )
+
+            financial_results.append(
+                result
+            )
+
+        print(
+            f"Orders financially processed: "
+            f"{len(financial_results)}"
+        )
+
+        print()
+
+        # --------------------------------------------------
+        # 14. Display financial analysis
+        # --------------------------------------------------
+
+        if not financial_results:
+            print(
+                "No stored orders available "
+                "for financial analysis."
+            )
+            print()
+
+        for result in financial_results:
+            print("=" * 50)
+
+            print(
+                f"Order: "
+                f"{result['order_name']}"
+            )
+
+            print(
+                "Financial status: "
+                f"{result['financial_status'].upper()}"
+            )
+
+            print(
+                f"Line items seen: "
+                f"{result['line_items_seen']}"
+            )
+
+            print(
+                f"Snapshots created: "
+                f"{result['snapshots_created']}"
+            )
+
+            print(
+                f"Existing snapshots: "
+                f"{result['existing_snapshots']}"
+            )
+
+            print(
+                f"Missing costs: "
+                f"{result['missing_cost_count']}"
+            )
+
+            summary = result["summary"]
+
+            if summary is not None:
+                currency_code = (
+                    summary["currency_code"]
+                )
+
+                print()
+                print("Financial summary")
+                print("-----------------")
+
+                print(
+                    "Merchandise revenue: "
+                    f"{summary['merchandise_revenue']} "
+                    f"{currency_code}"
+                )
+
+                print(
+                    "Product cost: "
+                    f"{summary['product_cost']} "
+                    f"{currency_code}"
+                )
+
+                print(
+                    "Estimated gross profit: "
+                    f"{summary['estimated_gross_profit']} "
+                    f"{currency_code}"
+                )
+
+                margin = (
+                    summary[
+                        "gross_margin_percent"
+                    ]
+                )
+
+                if margin is not None:
+                    print(
+                        f"Gross margin: "
+                        f"{margin}%"
+                    )
+                else:
+                    print(
+                        "Gross margin: N/A"
+                    )
+
+                print(
+                    f"Total quantity: "
+                    f"{summary['total_quantity']}"
+                )
+
+                print(
+                    f"Financial line items: "
+                    f"{summary['line_items_count']}"
+                )
+
+            elif result["missing_cost_count"] > 0:
+                print()
+                print("Missing cost configuration")
+                print("--------------------------")
+
+                for missing_item in (
+                    result["missing_cost_items"]
+                ):
+                    print(
+                        f"SKU: "
+                        f"{missing_item.get('sku') or 'NO-SKU'}"
+                    )
+
+                    print(
+                        "Variant ID: "
+                        f"{missing_item.get('shopify_variant_id') or 'N/A'}"
+                    )
+
+                    print()
+
+                print(
+                    "Profit summary unavailable "
+                    "until all product costs "
+                    "are configured."
+                )
+
+            else:
+                print()
+                print(
+                    "No financial summary "
+                    "is currently available."
+                )
+
+            print()
+
+        # --------------------------------------------------
+        # 15. Financial snapshot status
+        # --------------------------------------------------
+
+        stored_snapshot_count = (
+            profit_snapshot_repository
+            .count_snapshots()
+        )
+
+        print("Financial snapshot verification")
+        print("-------------------------------")
+
+        print(
+            f"Profit snapshots stored: "
+            f"{stored_snapshot_count}"
+        )
+
+        print()
+
+        # --------------------------------------------------
+        # 16. Read product data back from SQLite
         # --------------------------------------------------
 
         stored_products = (
@@ -359,7 +604,7 @@ def main():
         )
 
         # --------------------------------------------------
-        # 12. Read order data back from SQLite
+        # 17. Read order data back from SQLite
         # --------------------------------------------------
 
         stored_order_count = (
@@ -376,7 +621,7 @@ def main():
         )
 
         # --------------------------------------------------
-        # 13. Verify product database state
+        # 18. Verify product database state
         # --------------------------------------------------
 
         print("Product database verification")
@@ -430,7 +675,7 @@ def main():
         print()
 
         # --------------------------------------------------
-        # 14. Verify order database state
+        # 19. Verify order database state
         # --------------------------------------------------
 
         print("Order database verification")
@@ -482,7 +727,7 @@ def main():
             )
 
         # --------------------------------------------------
-        # 15. Mark synchronization successful
+        # 20. Mark synchronization successful
         # --------------------------------------------------
 
         sync_run_repository.mark_success(
@@ -532,7 +777,7 @@ def main():
         )
 
         # --------------------------------------------------
-        # 16. Display recent synchronization history
+        # 21. Display recent synchronization history
         # --------------------------------------------------
 
         recent_runs = (
@@ -555,7 +800,7 @@ def main():
 
     except Exception as exc:
         # --------------------------------------------------
-        # 17. Mark synchronization failed
+        # 22. Mark synchronization failed
         # --------------------------------------------------
 
         error_message = (
