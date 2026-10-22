@@ -186,6 +186,58 @@ CREATE TABLE IF NOT EXISTS order_line_item_profit_snapshots (
 );
 
 
+CREATE TABLE IF NOT EXISTS alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    alert_type TEXT NOT NULL
+        CHECK (
+            alert_type IN (
+                'new_order',
+                'missing_cost',
+                'low_inventory',
+                'sync_failure'
+            )
+        ),
+
+    severity TEXT NOT NULL
+        CHECK (
+            severity IN (
+                'info',
+                'warning',
+                'error',
+                'critical'
+            )
+        ),
+
+    status TEXT NOT NULL DEFAULT 'open'
+        CHECK (
+            status IN (
+                'open',
+                'resolved'
+            )
+        ),
+
+    dedupe_key TEXT NOT NULL,
+
+    title TEXT NOT NULL,
+
+    message TEXT NOT NULL,
+
+    entity_type TEXT,
+
+    entity_id TEXT,
+
+    occurrence_count INTEGER NOT NULL DEFAULT 1
+        CHECK (occurrence_count >= 1),
+
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    resolved_at TEXT
+);
+
+
 CREATE INDEX IF NOT EXISTS idx_variants_product_id
 ON variants(shopify_product_id);
 
@@ -228,6 +280,27 @@ ON order_line_item_profit_snapshots(shopify_variant_id);
 
 CREATE INDEX IF NOT EXISTS idx_profit_snapshots_sku
 ON order_line_item_profit_snapshots(sku);
+
+
+CREATE INDEX IF NOT EXISTS idx_alerts_status
+ON alerts(status);
+
+
+CREATE INDEX IF NOT EXISTS idx_alerts_type
+ON alerts(alert_type);
+
+
+CREATE INDEX IF NOT EXISTS idx_alerts_created_at
+ON alerts(created_at);
+
+
+CREATE INDEX IF NOT EXISTS idx_alerts_entity
+ON alerts(entity_type, entity_id);
+
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_open_dedupe
+ON alerts(dedupe_key)
+WHERE status = 'open';
 """
 
 
