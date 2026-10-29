@@ -1,41 +1,16 @@
 # Shopify Automation Lab
 
-A modular Python automation project that connects to the Shopify Admin GraphQL API, retrieves store data, persists it locally with SQLite, tracks product changes, and records synchronization health.
+Shopify Automation Lab is a modular Python backend automation system for Shopify. It connects securely to the Shopify Admin GraphQL API, synchronizes store data into SQLite, tracks operational history, analyzes order profitability, creates persistent alerts, records synchronization health, and generates immutable daily store-health reports.
 
-This project is being built incrementally as a learning-focused backend automation system, with an emphasis on clean architecture, security, reliability, and future extensibility.
+The project is intentionally built one feature at a time with an emphasis on clean architecture, security, observability, testability, and future extensibility.
 
 ---
 
-## Project Goals
+## V1 Direction
 
-Shopify Automation Lab is designed to explore how Python can be used to automate Shopify store operations.
+The current V1 focuses on proving a reliable single-store backend before moving into supplier synchronization, fulfillment automation, AI analysis, dashboards, multi-store support, or a public Shopify app.
 
-The current V1 focuses on building a reliable backend foundation before adding more advanced automation.
-
-Current goals include:
-
-- Connect Python securely to Shopify
-- Authenticate using Shopify client credentials
-- Retrieve Shopify products and variants
-- Handle GraphQL cursor pagination
-- Store Shopify data locally
-- Synchronize repeated API requests safely
-- Track price and inventory changes
-- Record synchronization success and failure
-- Build a modular architecture that can expand later
-
-Future versions may include:
-
-- Supplier synchronization
-- Inventory automation
-- Order monitoring
-- Fulfillment automation
-- Profit and margin analysis
-- Alerts
-- Daily reports
-- AI-assisted product analysis
-- Dashboards
-- Shopify app / SaaS architecture
+The goal is not only to automate Shopify operations, but also to use the project as a practical environment for learning Python, APIs, databases, software architecture, logging, testing, and business automation.
 
 ---
 
@@ -46,10 +21,11 @@ Future versions may include:
 Completed:
 
 - Python virtual environment
-- Project structure
+- Modular project structure
 - `.env` configuration
 - Git repository
 - Secure `.gitignore`
+- GitHub source control
 
 ## Stage 1 — Shopify Connection
 
@@ -59,6 +35,7 @@ Completed:
 - Reusable `ShopifyClient`
 - Shopify Admin GraphQL API connection
 - Environment-based credentials
+- API-version configuration
 
 ## Stage 2 — Product Retrieval
 
@@ -74,7 +51,7 @@ Completed:
 - Inventory quantity retrieval
 - Inventory item ID retrieval
 
-## Stage 3 — SQLite Persistence
+## Stage 3 — SQLite Persistence & Change Tracking
 
 Completed:
 
@@ -88,51 +65,165 @@ Completed:
 - Repeatable / idempotent syncs
 - Price-change detection
 - Inventory-change detection
-- Historical change tracking
-- Synchronization run auditing
+- Historical variant-change tracking
+- Synchronization-run auditing
 - Successful-run tracking
 - Failed-run tracking
 - Error persistence
 - Recent synchronization history
 - Data-integrity verification
 
+## Stage 4 — Shopify Order Synchronization
+
+Completed:
+
+- Shopify order GraphQL query
+- `OrderService`
+- Order persistence
+- Order-line-item persistence
+- New-order detection
+- Repeat-safe synchronization
+- Order update synchronization
+- Financial-status synchronization
+- Fulfillment-status synchronization
+- Order database verification
+
+## Stage 5 — Cost & Profit Analysis
+
+Completed:
+
+- Manual variant-cost configuration
+- `CostRepository`
+- Decimal-based financial calculations
+- Currency validation
+- Per-line-item revenue calculation
+- Product-cost calculation
+- Estimated gross-profit calculation
+- Gross-margin calculation
+- Immutable profit snapshots
+- Order-level financial summaries
+- Financial-completeness detection
+- Missing-cost protection
+- Historical cost preservation
+
+> Profit figures currently represent estimated **gross product profit**. They do not yet include advertising spend, payment-processing fees, Shopify fees, shipping expense, refunds, or tax liabilities.
+
+## Stage 6 — Logging, Alerts & Operational Monitoring
+
+Completed:
+
+- Structured application logging
+- Local log-file output
+- Persistent alert history
+- Alert deduplication
+- Alert occurrence tracking
+- Alert resolution
+- New-order alerts
+- Missing-cost alerts
+- Low-inventory alerts
+- Synchronization-failure alerts
+- Failure isolation
+- Controlled synchronization-failure testing
+- Operational alert verification
+
+## Stage 7 — Reporting & Store Health
+
+Completed:
+
+- `ReportService`
+- Timezone-aware business dates
+- Daily order activity
+- Historical profitability summaries
+- Today's financial performance
+- Currency-safe report aggregation
+- Recent price/inventory change summaries
+- Rule-based store-health status
+- Human-readable terminal reports
+- Immutable daily-report persistence
+- JSON report serialization
+- Historical report retrieval
+- Report workflow orchestration
+- Reporting acceptance testing
+- Post-sync report generation and persistence
+
 ---
 
 # Architecture
 
 ```text
-Shopify Store
-      |
-      v
-Shopify Admin GraphQL API
-      |
-      v
-ShopifyClient
-      |
-      v
-ProductService
-      |
-      v
-ProductRepository
-      |
-      +------> products
-      |
-      +------> variants
-      |
-      +------> variant_changes
-                    |
-                    v
-                  SQLite
+                           Shopify Store
+                                |
+                                v
+                    Shopify Admin GraphQL API
+                                |
+                                v
+                         ShopifyClient
+                         /          \
+                        v            v
+                ProductService   OrderService
+                        |            |
+                        v            v
+                ProductRepository OrderRepository
+                        |            |
+                        |            +--> orders
+                        |            +--> order_line_items
+                        |
+                        +--> products
+                        +--> variants
+                        +--> variant_changes
 
+CostRepository ----------------------+
+                                     |
+                                     v
+                              ProfitService
+                                     |
+                                     v
+                         FinancialProcessingService
+                                     |
+                                     v
+                        ProfitSnapshotRepository
+                                     |
+                                     +--> variant_costs
+                                     +--> order_line_item_profit_snapshots
 
-SyncRunRepository
-      |
-      +------> sync_runs
+AlertService ------------------------+
+                                     |
+                                     v
+                              AlertRepository
+                                     |
+                                     +--> alerts
 
-Project Structure
+SyncRunRepository ------------------> sync_runs
+
+ProductRepository -----------+
+OrderRepository -------------+
+ProfitSnapshotRepository ----+
+AlertRepository -------------+----> ReportService
+SyncRunRepository -----------+            |
+                                          v
+                               structured report dictionary
+                                  /                  \
+                                 v                    v
+                    TerminalReportFormatter   DailyReportRepository
+                                 |                    |
+                                 v                    v
+                       human-readable report      daily_reports
+                                  \                  /
+                                   \                /
+                                    v              v
+                                     DailyReportService
+```
+
+---
+
+# Project Structure
+
+```text
 shopify-automation-lab/
 |
 |-- config/
+|   |-- __init__.py
+|   |-- logging_config.py
 |   |-- settings.py
 |
 |-- database/
@@ -142,12 +233,24 @@ shopify-automation-lab/
 |
 |-- repositories/
 |   |-- __init__.py
+|   |-- alert_repository.py
+|   |-- cost_repository.py
+|   |-- daily_report_repository.py
+|   |-- order_repository.py
 |   |-- product_repository.py
+|   |-- profit_snapshot_repository.py
 |   |-- sync_run_repository.py
 |
 |-- services/
 |   |-- __init__.py
+|   |-- alert_service.py
+|   |-- daily_report_service.py
+|   |-- financial_processing_service.py
+|   |-- order_service.py
 |   |-- product_service.py
+|   |-- profit_service.py
+|   |-- report_formatter.py
+|   |-- report_service.py
 |
 |-- shopify/
 |   |-- __init__.py
@@ -155,280 +258,539 @@ shopify-automation-lab/
 |   |
 |   |-- queries/
 |       |-- __init__.py
+|       |-- orders.py
 |       |-- products.py
 |
 |-- data/
-|   |-- shopify.db
+|   |-- shopify.db                 # local only / Git ignored
 |
-|-- .env
+|-- logs/
+|   |-- ...                        # local only / Git ignored
+|
+|-- .env                           # local only / Git ignored
 |-- .env.example
 |-- .gitignore
 |-- main.py
 |-- README.md
+```
 
-The local SQLite database and .env file are intentionally excluded from Git.
+---
 
-Data Flow
+# SQLite Data Model
 
-The main synchronization flow currently works like this:
+## `products`
 
-1. Start synchronization audit
+Stores the latest synchronized Shopify product state.
 
-2. Authenticate with Shopify
+## `variants`
 
-3. Retrieve products through GraphQL
+Stores current variant data including:
 
-4. Follow Shopify pagination cursors
+- Shopify variant ID
+- Parent Shopify product ID
+- Variant title
+- SKU
+- Price
+- Inventory quantity
+- Inventory item ID
+- Last synchronization timestamp
 
-5. Return product dictionaries to ProductService
+## `variant_changes`
 
-6. Send products to ProductRepository
-
-7. Read existing SQLite state
-
-8. Detect price / inventory differences
-
-9. Record meaningful changes
-
-10. UPSERT the latest Shopify state
-
-11. Verify Shopify and SQLite counts
-
-12. Mark synchronization as successful
-
-If an exception occurs:
-
-13. Mark synchronization as failed
-
-14. Save the error message
-
-15. Re-raise the original exception
-SQLite Tables
-products
-
-Stores the current product state.
-
-Important fields include:
-
-Shopify product ID
-Product title
-Last synchronization timestamp
-variants
-
-Stores the current Shopify variant state.
-
-Important fields include:
-
-Shopify variant ID
-Parent product ID
-Variant title
-SKU
-Price
-Inventory quantity
-Inventory item ID
-Last synchronization timestamp
-variant_changes
-
-Stores historical price and inventory changes.
+Stores historical price and inventory movements.
 
 Example:
 
-SKU: AUTO-Cap-001
+```text
+AUTO-shirt-L | inventory_quantity | 10 -> 2
+AUTO-Cap-001 | inventory_quantity | 19 -> 18
+AUTO-shirt-L | price | 27.00 -> 5.00
+```
 
-price
-17.50 -> 10.00
+## `sync_runs`
 
-inventory_quantity
-18 -> 14
+Tracks every synchronization attempt, including:
 
-inventory_quantity
-14 -> 22
+- Started time
+- Completed time
+- Status
+- Products seen
+- Variants seen
+- Failure message
 
-This allows the application to preserve previous values instead of simply overwriting them.
+## `orders`
 
-sync_runs
+Stores synchronized Shopify orders.
 
-Tracks the health of each synchronization.
+## `order_line_items`
 
-Example:
+Stores the line items belonging to synchronized orders.
 
-Run #11
-Status: success
-Products seen: 2
-Variants seen: 3
+## `variant_costs`
 
-Failed runs can also store an error message for debugging.
+Stores configured variant costs used for profit estimation.
 
-Important Backend Concepts Used
+## `order_line_item_profit_snapshots`
 
-This project currently demonstrates:
+Stores immutable historical financial snapshots for order line items.
 
-Python
-Classes
-Functions
-Modules
-Packages
-Dictionaries
-Loops
-Generator expressions
-Context managers
-yield
-Exception handling
-try / except
-Exception propagation
-Logging
-Environment configuration
-SQL / SQLite
-CREATE TABLE
-SELECT
-INSERT
-UPDATE
-UPSERT
-ON CONFLICT
-JOIN
-Primary keys
-Foreign keys
-Constraints
-Indexes
-Transactions
-Commit / rollback
-Software Architecture
-API client layer
-Service layer
-Repository pattern
-Separation of concerns
-Single Responsibility Principle
-Idempotent synchronization
-Persistent state
-Historical state
-Audit trails
-Observability
-Security
+An existing snapshot is intentionally not recalculated if a product's current configured cost later changes.
 
-Sensitive credentials are stored in a local .env file.
+## `alerts`
 
-The following should never be committed to Git:
+Stores persistent operational alerts including:
 
+- New order
+- Missing cost
+- Low inventory
+- Synchronization failure
+
+Alerts support deduplication, occurrence counts, open/resolved state, and historical timestamps.
+
+## `daily_reports`
+
+Stores immutable structured reporting snapshots.
+
+Important fields include:
+
+- Business date
+- Report timezone
+- UTC generation timestamp
+- Health status
+- Complete serialized JSON report
+- Creation timestamp
+
+Multiple report snapshots may exist for the same business date. They are intentionally preserved instead of overwritten.
+
+---
+
+# Synchronization Flow
+
+A normal `python main.py` execution now follows this high-level flow:
+
+1. Start a synchronization audit.
+2. Authenticate with Shopify.
+3. Retrieve products and variants.
+4. Retrieve orders and line items.
+5. Persist current product state.
+6. Detect and store price/inventory changes.
+7. Synchronize low-inventory alerts.
+8. Persist orders and detect new orders.
+9. Create new-order alerts.
+10. Process order financials.
+11. Create or resolve missing-cost alerts.
+12. Preserve immutable profit snapshots.
+13. Verify Shopify and SQLite record counts.
+14. Mark the synchronization run successful.
+15. Display recent synchronization history.
+16. Generate the store-health report.
+17. Format the report for terminal output.
+18. Persist the structured report snapshot in `daily_reports`.
+
+If the core synchronization fails:
+
+- The synchronization run is marked failed.
+- The original error is persisted.
+- A synchronization-failure alert is created.
+- The original exception is re-raised.
+
+If reporting fails **after a successful synchronization**, the reporting error is logged separately and does not retroactively mark the successful Shopify sync as failed.
+
+---
+
+# Store Health Reporting
+
+The reporting subsystem summarizes:
+
+- Products and variants monitored
+- Total orders and line items
+- Today's order activity
+- Historical merchandise revenue
+- Historical product cost
+- Estimated gross profit
+- Gross margin
+- Financially complete/incomplete orders
+- Current low inventory
+- Current out-of-stock variants
+- Open alerts by severity and type
+- Recent product/inventory changes
+- Latest synchronization status
+- Recent synchronization failures
+
+Health status is rule-based and explainable:
+
+```text
+CRITICAL
+- Latest synchronization failed
+- One or more variants are out of stock
+
+ATTENTION
+- Low inventory exists
+- Financial data is incomplete
+- Missing-cost alerts are open
+- Recent synchronization failures exist
+
+HEALTHY
+- None of the above conditions are active
+```
+
+The report includes the exact reasons behind the current health state rather than using an opaque score.
+
+---
+
+# Example Daily Report
+
+```text
+SHOPIFY AUTOMATION LAB — DAILY REPORT
+================================================
+
+STORE HEALTH
+------------------------------------------------
+Status: ATTENTION
+Reasons:
+  - 2 variants are at or below the low-inventory threshold.
+  - 1 failed synchronization run was found in recent history.
+
+TODAY
+------------------------------------------------
+Orders: 0
+Merchandise revenue: N/A
+Estimated gross profit: N/A
+
+HISTORICAL PERFORMANCE
+------------------------------------------------
+Orders: 4
+Merchandise revenue: 50.00 USD
+Product cost: 21.50 USD
+Estimated gross profit: 28.50 USD
+Gross margin: 57.00%
+
+INVENTORY
+------------------------------------------------
+Low inventory variants: 2
+Out of stock variants: 0
+
+SYNC HEALTH
+------------------------------------------------
+Latest run: SUCCESS
+Recent failures: 1
+```
+
+---
+
+# Important Python & Backend Concepts Demonstrated
+
+## Python
+
+- Classes
+- Functions
+- Modules
+- Packages
+- Dictionaries
+- Nested data structures
+- Loops
+- Generator expressions
+- Context managers
+- Exception handling
+- Exception propagation
+- Type validation
+- `Decimal` financial arithmetic
+- `datetime`
+- `zoneinfo`
+- JSON serialization / deserialization
+- Logging
+- Assertions
+- Dependency injection
+
+## SQL / SQLite
+
+- `CREATE TABLE`
+- `SELECT`
+- `INSERT`
+- `UPDATE`
+- UPSERT
+- `ON CONFLICT`
+- `JOIN`
+- Primary keys
+- Foreign keys
+- Constraints
+- `CHECK`
+- Indexes
+- Transactions
+- Commit / rollback
+- Historical snapshots
+- Audit trails
+
+## Software Architecture
+
+- API client layer
+- Service layer
+- Repository pattern
+- Orchestration services
+- Separation of concerns
+- Single Responsibility Principle
+- Dependency injection
+- Idempotent synchronization
+- Persistent state
+- Historical state
+- Immutable snapshots
+- Data vs presentation separation
+- Failure isolation
+- Observability
+- Regression testing
+- Acceptance testing
+
+---
+
+# Security
+
+Sensitive Shopify credentials remain outside source control.
+
+Never commit:
+
+```text
 .env
 .venv/
 *.db
 data/*.db
+data/*.db-shm
+data/*.db-wal
 logs/
 __pycache__/
-
-An .env.example file may be committed as a template, but it must not contain real credentials.
+*.pyc
+```
 
 Never commit:
 
-Shopify client secrets
-Shopify access tokens
-Real .env files
-Production database files
-Environment Variables
+- Shopify client secrets
+- Access tokens
+- Production database files
+- Private customer data
+- Runtime logs containing sensitive operational details
 
-Create a .env file based on .env.example.
+The committed `.env.example` should contain placeholders only.
 
-Expected configuration includes variables for:
+---
 
+# Environment Configuration
+
+Create a local `.env` file based on `.env.example`.
+
+Current Shopify configuration includes:
+
+```text
 SHOPIFY_STORE_DOMAIN
 SHOPIFY_CLIENT_ID
 SHOPIFY_CLIENT_SECRET
 SHOPIFY_API_VERSION
+```
 
 Real values must remain private.
 
-Running the Project
+---
 
-Activate the virtual environment.
+# Timezone Dependency
 
-On Windows PowerShell:
+Stage 7 uses Python's standard-library `zoneinfo` support for timezone-aware reporting.
 
+On Windows, the IANA timezone database may need the `tzdata` package:
+
+```powershell
+python -m pip install tzdata
+```
+
+The current V1 reporting timezone is `America/Bogota`.
+
+A future multi-store version should make store timezone configuration tenant-specific.
+
+---
+
+# Running the Project
+
+## 1. Activate the virtual environment
+
+Windows PowerShell:
+
+```powershell
 .\.venv\Scripts\Activate.ps1
+```
 
-Initialize the SQLite schema:
+## 2. Initialize or migrate the SQLite schema
 
+```powershell
 python -m database.schema
+```
 
-Run the Shopify synchronization:
+The schema uses `CREATE TABLE IF NOT EXISTS`, so existing local data is preserved while missing tables/indexes are created.
 
+## 3. Run the complete Shopify synchronization
+
+```powershell
 python main.py
-Example Synchronization Result
-Shopify products: 2
-Database products: 2
+```
 
-Shopify variants: 3
-Database variants: 3
+A successful run performs synchronization, financial analysis, monitoring, audit verification, reporting, terminal formatting, and immutable report persistence.
 
-Shopify -> SQLite persistence test: SUCCESS
+## 4. Run a syntax check
 
-Example audit:
+```powershell
+python -m compileall config database repositories services shopify main.py
+```
 
-Run #11 | success | Products: 2 | Variants: 3
-Run #10 | success | Products: 2 | Variants: 3
-Run #9  | success | Products: 2 | Variants: 3
-Current Known Limitation
+---
 
-The current synchronization supports:
+# Testing Philosophy
 
-New products
-Existing product updates
-Price updates
-Inventory updates
-Repeated synchronization
+The project is intentionally developed checkpoint by checkpoint.
 
-Full deletion reconciliation has not yet been implemented.
+Each feature generally follows:
 
-For example, if a product is deleted from Shopify, the current application does not automatically remove or archive the corresponding SQLite record.
+```text
+Design
+  ↓
+Implement
+  ↓
+Test independently
+  ↓
+Integrate
+  ↓
+Regression test
+  ↓
+Acceptance test
+  ↓
+Git checkpoint
+```
 
-This behavior will be designed deliberately in a later stage.
+Examples already tested include:
 
-Roadmap
-V1 — Shopify Automation Foundation
+- Repeated product sync without duplicate products
+- Product price changes
+- Inventory changes
+- New Shopify order detection
+- Order updates
+- Duplicate-order prevention
+- Missing-cost recovery
+- Immutable profit snapshots
+- Alert deduplication
+- Alert resolution
+- Low-inventory recovery and recurrence
+- Controlled synchronization failure
+- Historical alert preservation
+- Timezone boundary reporting
+- Historical profitability aggregation
+- Daily business-date attribution
+- Daily-report JSON persistence
+- Full report persistence round trip
 
-Planned capabilities:
+---
 
- Project setup
- Shopify authentication
- GraphQL API client
- Product retrieval
- Cursor pagination
- SQLite persistence
- Product / variant UPSERT
- Inventory change detection
- Price change detection
- Change history
- Synchronization auditing
- Additional V1 automation capabilities
- Alerts
- Logging improvements
- Daily reporting
- Final V1 testing
-V2
+# Current Known Limitations
 
-Supplier synchronization.
+V1 currently has deliberate boundaries:
 
-V3
+- Single-store architecture
+- Local SQLite database
+- Polling/manual execution rather than full webhook-driven synchronization
+- Manual variant-cost configuration
+- No automatic supplier synchronization
+- No automatic fulfillment/tracking synchronization
+- No product-deletion reconciliation
+- No multi-user authentication
+- No frontend dashboard yet
+- Alerts are currently persisted locally rather than delivered through email/SMS/push channels
+- Profit reporting is estimated gross product profit, not full accounting net profit
 
-Fulfillment automation.
+These limitations are intentionally being addressed only after the V1 backend is proven stable.
 
-V4
+---
 
-AI product and business analysis.
+# Roadmap
 
-V5
+## V1 — Shopify Automation Foundation
 
-Dashboard / application interface.
+Implemented:
 
-Development Philosophy
+- Project foundation
+- Shopify authentication
+- GraphQL API client
+- Product retrieval
+- Cursor pagination
+- SQLite persistence
+- Product/variant synchronization
+- Price/inventory history
+- Order synchronization
+- New-order detection
+- Product cost configuration
+- Profit analysis
+- Immutable financial snapshots
+- Structured logging
+- Persistent alerts
+- Low-inventory monitoring
+- Failure monitoring
+- Store-health reporting
+- Daily report persistence
+
+Remaining V1 focus:
+
+- Final integrated validation
+- Documentation cleanup
+- Dependency cleanup
+- Automated test-suite expansion
+- Final V1 GitHub release checkpoint
+
+## V2 — Supplier Synchronization
+
+Potential future capabilities:
+
+- Supplier product mapping
+- Supplier cost updates
+- Supplier inventory synchronization
+- Automated store inventory protection
+
+## V3 — Fulfillment Automation
+
+Potential future capabilities:
+
+- Fulfillment workflows
+- Tracking synchronization
+- Order-routing logic
+
+## V4 — AI Product & Business Analysis
+
+Potential future capabilities:
+
+- Product analysis
+- Store-performance insights
+- Automated recommendations
+
+## V5 — Dashboard / Application Interface
+
+Potential architecture:
+
+```text
+Python services/repositories
+        ↓
+FastAPI
+        ↓
+JSON API
+        ↓
+React / Next.js dashboard
+```
+
+The goal is to place a modern frontend on top of the existing backend rather than rewrite the business logic.
+
+---
+
+# Development Philosophy
 
 This project is intentionally being developed one feature at a time.
 
 Each major feature is:
 
-Designed
-Implemented
-Tested independently
-Integrated
-Verified before continuing
+1. Designed
+2. Implemented
+3. Tested independently
+4. Integrated
+5. Verified before continuing
 
-The goal is not only to create working Shopify automation, but also to understand the Python, database, API, and software-engineering concepts behind the system.
+The goal is to produce a working Shopify automation backend while understanding the Python, database, API, security, and software-engineering concepts behind every layer.

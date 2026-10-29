@@ -238,6 +238,30 @@ CREATE TABLE IF NOT EXISTS alerts (
 );
 
 
+CREATE TABLE IF NOT EXISTS daily_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    business_date TEXT NOT NULL,
+
+    report_timezone TEXT NOT NULL,
+
+    generated_at_utc TEXT NOT NULL,
+
+    health_status TEXT NOT NULL
+        CHECK (
+            health_status IN (
+                'healthy',
+                'attention',
+                'critical'
+            )
+        ),
+
+    report_json TEXT NOT NULL,
+
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
 CREATE INDEX IF NOT EXISTS idx_variants_product_id
 ON variants(shopify_product_id);
 
@@ -296,6 +320,18 @@ ON alerts(created_at);
 
 CREATE INDEX IF NOT EXISTS idx_alerts_entity
 ON alerts(entity_type, entity_id);
+
+
+CREATE INDEX IF NOT EXISTS idx_daily_reports_business_date
+ON daily_reports(business_date);
+
+
+CREATE INDEX IF NOT EXISTS idx_daily_reports_generated_at_utc
+ON daily_reports(generated_at_utc);
+
+
+CREATE INDEX IF NOT EXISTS idx_daily_reports_health_status
+ON daily_reports(health_status);
 
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_open_dedupe

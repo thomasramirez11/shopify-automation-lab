@@ -12,6 +12,7 @@ from config.settings import (
 
 from repositories.alert_repository import AlertRepository
 from repositories.cost_repository import CostRepository
+from repositories.daily_report_repository import DailyReportRepository
 from repositories.order_repository import OrderRepository
 from repositories.product_repository import ProductRepository
 from repositories.profit_snapshot_repository import (
@@ -22,9 +23,12 @@ from services.alert_service import AlertService
 from services.financial_processing_service import (
     FinancialProcessingService,
 )
+from services.daily_report_service import DailyReportService
 from services.order_service import OrderService
 from services.product_service import ProductService
 from services.profit_service import ProfitService
+from services.report_formatter import TerminalReportFormatter
+from services.report_service import ReportService
 from shopify.client import ShopifyClient
 
 
@@ -1244,9 +1248,102 @@ def main():
                 f"Variants: {run['variants_seen']}"
             )
 
+        # --------------------------------------------------
+        # 23. Generate, format, and persist daily report
+        # --------------------------------------------------
+        #
+        # Reporting runs only after the synchronization has
+        # already been marked successful.
+        #
+        # It has its own failure boundary so a reporting
+        # problem cannot retroactively turn a successful
+        # Shopify synchronization into a failed sync run.
+        # --------------------------------------------------
+
+        try:
+            report_service = ReportService(
+                product_repository=product_repository,
+                order_repository=order_repository,
+                alert_repository=alert_repository,
+                sync_run_repository=sync_run_repository,
+                profit_snapshot_repository=(
+                    profit_snapshot_repository
+                ),
+                low_inventory_threshold=(
+                    LOW_INVENTORY_THRESHOLD
+                ),
+                recent_change_limit=10,
+            )
+
+            report_formatter = TerminalReportFormatter(
+                recent_changes_to_show=5
+            )
+
+            daily_report_repository = (
+                DailyReportRepository()
+            )
+
+            daily_report_service = DailyReportService(
+                report_service=report_service,
+                report_formatter=report_formatter,
+                daily_report_repository=(
+                    daily_report_repository
+                ),
+            )
+
+            daily_report_result = (
+                daily_report_service
+                .generate_and_save_report()
+            )
+
+            print()
+            print(
+                daily_report_result[
+                    "formatted_report"
+                ]
+            )
+            print()
+
+            print(
+                "Daily report snapshot stored: "
+                f"#{daily_report_result['report_id']}"
+            )
+            print()
+
+            logger.info(
+                "Daily reporting workflow completed. "
+                "report_id=%s health=%s.",
+                daily_report_result[
+                    "report_id"
+                ],
+                daily_report_result[
+                    "report"
+                ][
+                    "health"
+                ][
+                    "status"
+                ],
+            )
+
+        except Exception:
+            logger.exception(
+                "Daily reporting workflow failed "
+                "after successful synchronization "
+                "run #%s.",
+                sync_run_id,
+            )
+
+            print()
+            print("Daily report generation failed.")
+            print(
+                "Synchronization remains successful; "
+                "review the application log for details."
+            )
+            print()
+
     except Exception as exc:
         # --------------------------------------------------
-        # 23. Failure isolation + synchronization alerting
+        # 24. Failure isolation + synchronization alerting
         # --------------------------------------------------
 
         error_type = type(exc).__name__

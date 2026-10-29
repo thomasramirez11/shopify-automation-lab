@@ -252,6 +252,67 @@ class ProductRepository:
                 for row in cursor.fetchall()
             ]
 
+    def get_recent_variant_changes(
+        self,
+        limit: int = 10,
+    ) -> list:
+        """
+        Return the most recently detected price and
+        inventory changes across all stored variants.
+
+        Results are newest first.
+        """
+
+        if isinstance(limit, bool) or not isinstance(
+            limit,
+            int,
+        ):
+            raise ValueError(
+                "limit must be an integer."
+            )
+
+        if limit <= 0:
+            raise ValueError(
+                "limit must be greater than zero."
+            )
+
+        with get_db_connection() as connection:
+            cursor = connection.execute(
+                """
+                SELECT
+                    vc.id,
+                    vc.shopify_variant_id,
+                    p.title AS product_title,
+                    v.title AS variant_title,
+                    v.sku,
+                    vc.field_name,
+                    vc.old_value,
+                    vc.new_value,
+                    vc.detected_at
+                FROM variant_changes AS vc
+
+                INNER JOIN variants AS v
+                    ON vc.shopify_variant_id =
+                    v.shopify_variant_id
+
+                INNER JOIN products AS p
+                    ON v.shopify_product_id =
+                    p.shopify_product_id
+
+                ORDER BY
+                    vc.detected_at DESC,
+                    vc.id DESC
+
+                LIMIT ?;
+                """,
+                (limit,),
+            )
+
+            return [
+                dict(row)
+                for row in cursor.fetchall()
+            ]
+
     def get_all_products(self) -> list:
         """
         Return all products currently stored in SQLite.

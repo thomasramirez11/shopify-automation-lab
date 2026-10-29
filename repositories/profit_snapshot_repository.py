@@ -214,6 +214,47 @@ class ProfitSnapshotRepository:
                 for row in cursor.fetchall()
             ]
 
+    def get_all_snapshots(
+        self,
+    ) -> list:
+        """
+        Return every immutable profit snapshot
+        in historical creation order.
+
+        Reporting uses these stored historical values
+        rather than recalculating old sales from current
+        product costs.
+        """
+
+        with get_db_connection() as connection:
+            cursor = connection.execute(
+                """
+                SELECT
+                    id,
+                    shopify_line_item_id,
+                    shopify_order_id,
+                    shopify_variant_id,
+                    sku,
+                    quantity,
+                    currency_code,
+                    unit_sale_price,
+                    unit_cost,
+                    line_revenue,
+                    line_cost,
+                    estimated_gross_profit,
+                    gross_margin_percent,
+                    cost_source,
+                    calculated_at
+                FROM order_line_item_profit_snapshots
+                ORDER BY id;
+                """
+            )
+
+            return [
+                dict(row)
+                for row in cursor.fetchall()
+            ]
+
     def count_snapshots(self) -> int:
         """
         Return the number of historical
