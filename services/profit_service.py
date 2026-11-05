@@ -192,6 +192,7 @@ class ProfitService:
                 field_name=(
                     "estimated_gross_profit"
                 ),
+                allow_negative=True,
             )
 
             total_quantity += (
@@ -249,9 +250,19 @@ class ProfitService:
         self,
         value,
         field_name: str,
+        *,
+        allow_negative: bool = False,
     ) -> Decimal:
         """
         Convert and validate one monetary value.
+
+        Negative values are rejected by default because
+        source monetary inputs such as sale price and
+        product cost should not be negative.
+
+        Derived financial results, such as estimated gross
+        profit, may legitimately be negative when an order
+        or line item is sold at a loss.
         """
 
         try:
@@ -268,7 +279,10 @@ class ProfitService:
                 "a valid decimal number."
             ) from exc
 
-        if decimal_value < 0:
+        if (
+            not allow_negative
+            and decimal_value < 0
+        ):
             raise ValueError(
                 f"{field_name} cannot be negative."
             )
