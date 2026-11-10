@@ -1,0 +1,16 @@
+[
+  {
+    "supplier_code": "demo_supplier",
+    "supplier_sku": "SUP-CAP-001",
+    "shopify_variant_id": "gid://shopify/ProductVariant/56166258147700",
+    "shopify_sku": "AUTO-Cap-001",
+    "active": true
+  },
+  {
+    "supplier_code": "demo_supplier",
+    "supplier_sku": "SUP-SHIRT-L",
+    "shopify_variant_id": "gid://shopify/ProductVariant/56166256607604",
+    "shopify_sku": "AUTO-shirt-L",
+    "active": true
+  }
+]
