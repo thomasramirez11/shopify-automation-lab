@@ -22,6 +22,7 @@ from supplier.plan.models import (
 @dataclass(frozen=True)
 class ControlledLiveWriteResult:
     execution_report: SupplierExecutionReport
+    before_readback: InventoryReadbackState
     readback: InventoryReadbackState
 
     @property
@@ -154,6 +155,7 @@ def execute_controlled_single_variant_write(
 
     return ControlledLiveWriteResult(
         execution_report=report,
+        before_readback=before,
         readback=after,
     )
 

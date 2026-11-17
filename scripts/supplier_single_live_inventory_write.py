@@ -28,6 +28,8 @@ from config.settings import (  # noqa: E402
 from database.connection import get_db_connection  # noqa: E402
 from shopify.client import ShopifyClient  # noqa: E402
 from supplier.adapters.json_file_supplier import JsonFileSupplierAdapter  # noqa: E402
+from supplier.audit.repository import SupplierExecutionAuditRepository  # noqa: E402
+from supplier.audit.service import SupplierExecutionAuditService  # noqa: E402
 from supplier.comparison.engine import compare_supplier_to_shopify  # noqa: E402
 from supplier.comparison.snapshot import (  # noqa: E402
     SQLiteShopifyComparisonSnapshotAdapter,
@@ -387,18 +389,64 @@ def main() -> int:
         )
     )
 
-    result = execute_controlled_single_variant_write(
+    audit_repository = SupplierExecutionAuditRepository()
+    audit_service = SupplierExecutionAuditService(
+        audit_repository
+    )
+
+    operation_id = audit_service.operation_id_for(
         plan=plan,
-        guard_report=guard,
-        target_sku=args.target_sku,
         inventory_item_id=inventory_item_id,
         location_id=args.location_id,
-        confirmation_token=(
-            args.confirm
-            or ""
+    )
+
+    started_event = audit_service.record_started(
+        plan=plan,
+        inventory_item_id=inventory_item_id,
+        location_id=args.location_id,
+    )
+
+    try:
+        result = execute_controlled_single_variant_write(
+            plan=plan,
+            guard_report=guard,
+            target_sku=args.target_sku,
+            inventory_item_id=inventory_item_id,
+            location_id=args.location_id,
+            confirmation_token=(
+                args.confirm
+                or ""
+            ),
+            inventory_port=inventory_adapter,
+            readback_port=readback,
+        )
+
+    except Exception as exc:
+        failed_event = audit_service.record_failed(
+            plan=plan,
+            inventory_item_id=inventory_item_id,
+            location_id=args.location_id,
+            error_message=str(exc),
+        )
+
+        print(
+            f"Execution audit operation: {operation_id}"
+        )
+        print(
+            f"Audit start event ID: {started_event.event_id}"
+        )
+        print(
+            f"Audit failure event ID: {failed_event.event_id}"
+        )
+        raise
+
+    verified_event = audit_service.record_verified(
+        plan=plan,
+        inventory_item_id=inventory_item_id,
+        location_id=args.location_id,
+        observed_after_quantity=(
+            result.readback.available_quantity
         ),
-        inventory_port=inventory_adapter,
-        readback_port=readback,
     )
 
     print(
@@ -420,7 +468,23 @@ def main() -> int:
         "LIVE SHOPIFY WRITES: 1"
     )
     print(
-        "SQLITE WRITES: 0"
+        "EXECUTION AUDIT"
+    )
+    print(
+        f"Operation ID: {operation_id}"
+    )
+    print(
+        f"Started event ID: {started_event.event_id}"
+    )
+    print(
+        f"Verified event ID: {verified_event.event_id}"
+    )
+    print(
+        f"Audit events stored: "
+        f"{audit_repository.count_events()}"
+    )
+    print(
+        "SQLITE AUDIT WRITES: 2"
     )
     print()
     print(
