@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 def ensure_supplier_orchestration_schema(connection) -> None:
-    """Create the append-only control-plane run ledger."""
+    """Create / migrate the append-only control-plane run ledger."""
     connection.executescript(
         """
         CREATE TABLE IF NOT EXISTS supplier_orchestration_runs (
@@ -10,12 +10,9 @@ def ensure_supplier_orchestration_schema(connection) -> None:
             supplier_code TEXT NOT NULL,
             orchestration_fingerprint TEXT NOT NULL CHECK (LENGTH(orchestration_fingerprint) = 64),
             manifest_fingerprint TEXT NOT NULL CHECK (LENGTH(manifest_fingerprint) = 64),
-            posture TEXT NOT NULL CHECK (posture IN (
-                'idle','ready_for_approval','review_required','blocked','recovery_pending','human_attention'
-            )),
-            next_action TEXT NOT NULL CHECK (next_action IN (
-                'none','approve_batch','review_batch','fix_blocking_issues','process_retry_queue','review_dead_letter_cases'
-            )),
+            policy_fingerprint TEXT NOT NULL DEFAULT '',
+            posture TEXT NOT NULL,
+            next_action TEXT NOT NULL,
             planned_mutations INTEGER NOT NULL CHECK (planned_mutations >= 0),
             review_items INTEGER NOT NULL CHECK (review_items >= 0),
             blocked_items INTEGER NOT NULL CHECK (blocked_items >= 0),
@@ -30,8 +27,12 @@ def ensure_supplier_orchestration_schema(connection) -> None:
             resolution_closed INTEGER NOT NULL CHECK (resolution_closed >= 0),
             previous_run_id INTEGER,
             previous_posture TEXT,
+            previous_policy_fingerprint TEXT,
             posture_changed INTEGER NOT NULL CHECK (posture_changed IN (0,1)),
             next_action_changed INTEGER NOT NULL CHECK (next_action_changed IN (0,1)),
+            policy_changed INTEGER NOT NULL DEFAULT 0 CHECK (policy_changed IN (0,1)),
+            manifest_changed INTEGER NOT NULL DEFAULT 0 CHECK (manifest_changed IN (0,1)),
+            snapshot_changed INTEGER NOT NULL DEFAULT 0 CHECK (snapshot_changed IN (0,1)),
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -54,3 +55,25 @@ def ensure_supplier_orchestration_schema(connection) -> None:
         END;
         """
     )
+    _migrate_v27e_columns(connection)
+
+
+def _migrate_v27e_columns(connection) -> None:
+    columns = {
+        row["name"]
+        for row in connection.execute(
+            "PRAGMA table_info(supplier_orchestration_runs);"
+        ).fetchall()
+    }
+    additions = {
+        "policy_fingerprint": "TEXT NOT NULL DEFAULT ''",
+        "previous_policy_fingerprint": "TEXT",
+        "policy_changed": "INTEGER NOT NULL DEFAULT 0",
+        "manifest_changed": "INTEGER NOT NULL DEFAULT 0",
+        "snapshot_changed": "INTEGER NOT NULL DEFAULT 0",
+    }
+    for name, definition in additions.items():
+        if name not in columns:
+            connection.execute(
+                f"ALTER TABLE supplier_orchestration_runs ADD COLUMN {name} {definition};"
+            )
