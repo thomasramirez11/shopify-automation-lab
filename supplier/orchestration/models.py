@@ -78,6 +78,11 @@ class SupplierOperationsSnapshot:
     posture: SupplierSystemPosture
     next_action: SupplierNextAction
 
+    policy_gate_status: str
+    policy_reasons: tuple[str, ...]
+    policy_fingerprint: str
+    consecutive_human_attention_runs: int
+
     orchestration_fingerprint: str
 
     @property

@@ -4,31 +4,24 @@ import hashlib
 import json
 
 from supplier.batch.builder import build_batch_safety_manifest
-from supplier.batch.models import (
-    BatchSafetyPolicy,
-    BatchSafetyStatus,
-)
+from supplier.batch.models import BatchSafetyPolicy
 from supplier.comparison.engine import compare_supplier_to_shopify
 from supplier.decision.models import InventorySyncPolicy
 from supplier.decision.policy import evaluate_supplier_sync_decision
 from supplier.orchestration.models import (
-    SupplierNextAction,
     SupplierOperationsBacklog,
     SupplierOperationsSnapshot,
-    SupplierSystemPosture,
+)
+from supplier.orchestration.policy_engine import (
+    DEFAULT_CONTROL_PLANE_POLICY,
+    evaluate_control_plane_policy,
 )
 from supplier.plan.builder import build_dry_run_sync_plan
 
 
 class SupplierOperationsOrchestrator:
     """
-    Unified READ-ONLY application layer.
-
-    Coordinates supplier feed -> mappings -> trusted V1 snapshot ->
-    comparison -> item policy -> dry-run plan -> batch safety -> operational
-    backlog -> one operator-facing posture.
-
-    It does not execute Shopify mutations.
+    Unified READ-ONLY application layer with configurable operational policy.
     """
 
     def __init__(
@@ -41,9 +34,14 @@ class SupplierOperationsOrchestrator:
         item_policy: InventorySyncPolicy,
         batch_policy: BatchSafetyPolicy,
         backlog_reader=None,
+        control_plane_policy=None,
+        policy_history_reader=None,
     ) -> None:
         if (
-            not isinstance(supplier_code, str)
+            not isinstance(
+                supplier_code,
+                str,
+            )
             or not supplier_code.strip()
         ):
             raise ValueError(
@@ -53,19 +51,18 @@ class SupplierOperationsOrchestrator:
         self._supplier_code = (
             supplier_code.strip()
         )
-        self._supplier_adapter = (
-            supplier_adapter
-        )
-        self._mapping_loader = (
-            mapping_loader
-        )
-        self._snapshot_adapter = (
-            snapshot_adapter
-        )
+        self._supplier_adapter = supplier_adapter
+        self._mapping_loader = mapping_loader
+        self._snapshot_adapter = snapshot_adapter
         self._item_policy = item_policy
         self._batch_policy = batch_policy
-        self._backlog_reader = (
-            backlog_reader
+        self._backlog_reader = backlog_reader
+        self._control_plane_policy = (
+            control_plane_policy
+            or DEFAULT_CONTROL_PLANE_POLICY
+        )
+        self._policy_history_reader = (
+            policy_history_reader
         )
 
     def build_snapshot(
@@ -74,11 +71,13 @@ class SupplierOperationsOrchestrator:
         supplier_products = {
             product.supplier_sku: product
             for product
-            in self._supplier_adapter.list_products()
+            in self._supplier_adapter
+            .list_products()
         }
 
         registry = (
-            self._mapping_loader.load_registry()
+            self._mapping_loader
+            .load_registry()
         )
 
         mappings = tuple(
@@ -155,10 +154,26 @@ class SupplierOperationsOrchestrator:
             else SupplierOperationsBacklog()
         )
 
-        posture, next_action = (
-            determine_system_posture(
+        consecutive = (
+            self._policy_history_reader
+            .consecutive_human_attention_runs(
+                self._supplier_code
+            )
+            if self._policy_history_reader
+            is not None
+            else 0
+        )
+
+        policy_decision = (
+            evaluate_control_plane_policy(
                 manifest=manifest,
                 backlog=backlog,
+                policy=(
+                    self._control_plane_policy
+                ),
+                consecutive_human_attention_runs=(
+                    consecutive
+                ),
             )
         )
 
@@ -169,8 +184,16 @@ class SupplierOperationsOrchestrator:
                 ),
                 manifest=manifest,
                 backlog=backlog,
-                posture=posture,
-                next_action=next_action,
+                posture=(
+                    policy_decision.posture
+                ),
+                next_action=(
+                    policy_decision.next_action
+                ),
+                policy_fingerprint=(
+                    policy_decision
+                    .policy_fingerprint
+                ),
             )
         )
 
@@ -182,19 +205,34 @@ class SupplierOperationsOrchestrator:
                 len(mappings)
             ),
             supplier_product_count=(
-                len(
-                    supplier_products
-                )
+                len(supplier_products)
             ),
-            decisions=(
-                decision_tuple
-            ),
+            decisions=decision_tuple,
             plan=plan,
             manifest=manifest,
             backlog=backlog,
-            posture=posture,
+            posture=(
+                policy_decision.posture
+            ),
             next_action=(
-                next_action
+                policy_decision.next_action
+            ),
+            policy_gate_status=(
+                policy_decision
+                .gate_status.value
+            ),
+            policy_reasons=tuple(
+                reason.value
+                for reason
+                in policy_decision.reasons
+            ),
+            policy_fingerprint=(
+                policy_decision
+                .policy_fingerprint
+            ),
+            consecutive_human_attention_runs=(
+                policy_decision
+                .consecutive_human_attention_runs
             ),
             orchestration_fingerprint=(
                 fingerprint
@@ -205,65 +243,26 @@ class SupplierOperationsOrchestrator:
 def determine_system_posture(
     *,
     manifest,
-    backlog: SupplierOperationsBacklog,
-) -> tuple[
-    SupplierSystemPosture,
-    SupplierNextAction,
-]:
+    backlog,
+):
     """
-    Control-plane precedence.
-
-    Human escalation > retry recovery > new batch work.
+    Backward-compatible wrapper around the default control-plane policy.
     """
 
-    if (
-        backlog.unresolved_human_cases
-        > 0
-    ):
-        return (
-            SupplierSystemPosture.HUMAN_ATTENTION,
-            SupplierNextAction.REVIEW_DEAD_LETTER_CASES,
+    decision = (
+        evaluate_control_plane_policy(
+            manifest=manifest,
+            backlog=backlog,
+            policy=(
+                DEFAULT_CONTROL_PLANE_POLICY
+            ),
+            consecutive_human_attention_runs=0,
         )
-
-    if (
-        backlog.queued_retry_attempts
-        > 0
-    ):
-        return (
-            SupplierSystemPosture.RECOVERY_PENDING,
-            SupplierNextAction.PROCESS_RETRY_QUEUE,
-        )
-
-    if (
-        manifest.status
-        == BatchSafetyStatus.BLOCKED
-    ):
-        return (
-            SupplierSystemPosture.BLOCKED,
-            SupplierNextAction.FIX_BLOCKING_ISSUES,
-        )
-
-    if (
-        manifest.status
-        == BatchSafetyStatus.REVIEW_REQUIRED
-    ):
-        return (
-            SupplierSystemPosture.REVIEW_REQUIRED,
-            SupplierNextAction.REVIEW_BATCH,
-        )
-
-    if (
-        manifest.status
-        == BatchSafetyStatus.READY
-    ):
-        return (
-            SupplierSystemPosture.READY_FOR_APPROVAL,
-            SupplierNextAction.APPROVE_BATCH,
-        )
+    )
 
     return (
-        SupplierSystemPosture.IDLE,
-        SupplierNextAction.NONE,
+        decision.posture,
+        decision.next_action,
     )
 
 
@@ -271,21 +270,18 @@ def build_orchestration_fingerprint(
     *,
     supplier_code: str,
     manifest,
-    backlog: SupplierOperationsBacklog,
-    posture: SupplierSystemPosture,
-    next_action: SupplierNextAction,
+    backlog,
+    posture,
+    next_action,
+    policy_fingerprint: str = "",
 ) -> str:
-    """
-    Stable identity for one read-only control-plane snapshot.
-
-    This is diagnostic identity, not an execution approval.
-    """
-
     payload = {
         "supplier_code":
             supplier_code,
         "manifest_fingerprint":
             manifest.manifest_fingerprint,
+        "policy_fingerprint":
+            policy_fingerprint,
         "backlog": {
             "queued_retry_attempts":
                 backlog.queued_retry_attempts,
