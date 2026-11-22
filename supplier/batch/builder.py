@@ -5,6 +5,7 @@ import json
 
 from supplier.batch.models import (
     BatchMutationPreview,
+    BatchSafetyError,
     BatchSafetyManifest,
     BatchSafetyPolicy,
     BatchSafetyReason,
@@ -28,36 +29,13 @@ def build_batch_safety_manifest(
     """
 
     mutations = tuple(
-        BatchMutationPreview(
-            supplier_sku=(
-                item.supplier_sku
-            ),
-            shopify_variant_id=(
-                item.shopify_variant_id
-            ),
-            shopify_sku=(
-                item.shopify_sku
-            ),
-            current_inventory_quantity=(
-                item.current_inventory_quantity
-            ),
-            proposed_inventory_quantity=(
-                item.proposed_inventory_quantity
-            ),
-            inventory_delta=(
-                item.inventory_delta
-            ),
+        _build_mutation_preview(
+            item
         )
         for item in plan.items
         if (
             item.action
             == SyncPlanAction.SET_INVENTORY
-            and item.current_inventory_quantity
-            is not None
-            and item.proposed_inventory_quantity
-            is not None
-            and item.inventory_delta
-            is not None
         )
     )
 
@@ -127,6 +105,77 @@ def build_batch_safety_manifest(
         policy=policy,
     )
 
+
+
+def _build_mutation_preview(
+    item,
+) -> BatchMutationPreview:
+    """
+    Fail closed for malformed mutation candidates.
+
+    Before V2.8A, a SET_INVENTORY item with a missing current/proposed/delta
+    value could be omitted from the batch manifest. That is safe enough for a
+    preview, but not acceptable before live multi-item execution.
+    """
+
+    required_integer_fields = {
+        "current_inventory_quantity":
+            item.current_inventory_quantity,
+        "proposed_inventory_quantity":
+            item.proposed_inventory_quantity,
+        "inventory_delta":
+            item.inventory_delta,
+    }
+
+    for field_name, value in required_integer_fields.items():
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int)
+        ):
+            raise BatchSafetyError(
+                "SET_INVENTORY plan item "
+                f"{item.shopify_variant_id!r} has invalid "
+                f"{field_name}; live-batch planning fails closed."
+            )
+
+    expected_delta = (
+        item.proposed_inventory_quantity
+        - item.current_inventory_quantity
+    )
+
+    if item.inventory_delta != expected_delta:
+        raise BatchSafetyError(
+            "SET_INVENTORY plan item "
+            f"{item.shopify_variant_id!r} has inconsistent "
+            "inventory_delta."
+        )
+
+    if item.inventory_delta == 0:
+        raise BatchSafetyError(
+            "SET_INVENTORY plan item "
+            f"{item.shopify_variant_id!r} has zero inventory_delta."
+        )
+
+    return BatchMutationPreview(
+        supplier_sku=(
+            item.supplier_sku
+        ),
+        shopify_variant_id=(
+            item.shopify_variant_id
+        ),
+        shopify_sku=(
+            item.shopify_sku
+        ),
+        current_inventory_quantity=(
+            item.current_inventory_quantity
+        ),
+        proposed_inventory_quantity=(
+            item.proposed_inventory_quantity
+        ),
+        inventory_delta=(
+            item.inventory_delta
+        ),
+    )
 
 def _evaluate_status(
     *,
