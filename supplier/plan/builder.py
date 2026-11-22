@@ -196,3 +196,14 @@ def _build_fingerprint(
             "utf-8"
         )
     ).hexdigest()
+
+
+def calculate_plan_fingerprint(plan: SupplierSyncPlan) -> str:
+    """Recompute the canonical plan hash without trusting its stored fingerprint.
+
+    Public validation helper for pre-execution safety checks. The same
+    serialization is used by ``build_dry_run_sync_plan``.
+    """
+    if not isinstance(plan, SupplierSyncPlan):
+        raise SupplierSyncPlanError("Expected SupplierSyncPlan.")
+    return _build_fingerprint(plan.items)
