@@ -69,12 +69,11 @@ class SupplierLiveBatchIntentRepository:
     def __init__(self, *, connection_factory: Callable[[], ContextManager[sqlite3.Connection]]) -> None:
         self._connection_factory = connection_factory
 
-    def reserve(self, prepared: PreparedBatchRequest) -> StoredIntent:
-        """Persist identity before future network I/O; prevent duplicate manifest attempts.
+    @staticmethod
+    def validate_prepared(prepared: PreparedBatchRequest) -> None:
+        """Validate preflight, payload, identity, CAS and digest without database writes.
 
-        Do not call this from normal read-only previews against the user's V1 DB.
-        A later controlled executor must use an audit/recovery state machine before
-        introducing mutation dispatch. A successful INSERT is not authorization.
+        Also used by V2.8B/4 atomic preparation so validation stays in one place.
         """
         if not isinstance(prepared, PreparedBatchRequest):
             raise IntentConflict("expected a PreparedBatchRequest")
@@ -148,6 +147,13 @@ class SupplierLiveBatchIntentRepository:
         if expected_digest != prepared.request_digest:
             raise IntentConflict("request digest mismatch: prepared payload was altered")
 
+    def reserve(self, prepared: PreparedBatchRequest) -> StoredIntent:
+        """Legacy intent-only reservation; does not create an atomic snapshot.
+
+        Future live execution must use SupplierLiveBatchAtomicPreparationRepository
+        instead of invoking reserve() and store_snapshot() separately.
+        """
+        self.validate_prepared(prepared)
         with self._connection_factory() as db:
             db.executescript(SCHEMA_SQL)
             try:
